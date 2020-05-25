@@ -33,3 +33,8 @@ barrier.signal()
  
 critical point
 ```
+
+vedere anche:
+
+https://github.com/marcotessarotto/exOpSys/tree/master/008.04threads-barrier
+
