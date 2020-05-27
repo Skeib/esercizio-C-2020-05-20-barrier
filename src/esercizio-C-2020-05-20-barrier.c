@@ -22,35 +22,30 @@
 
 #define N 10
 
-sem_t mutex;
-sem_t barrier;
+int count;
 
-int count; // variabile condivisa tra i due thread
+pthread_barrier_t thread_barrier;
+
+sem_t mutex;
+
 int number_of_threads = N;
 
-/*
-rendezvous
-
-mutex.wait()
-   count = count + 1
-mutex.signal()
-
-if count == n :
-   barrier.signal()
-
-barrier.wait()
-barrier.signal()
-
-critical point
- */
-
-void * thread_function(void * arg) {
+void * rendezvous(void * arg) {
+	int s;
 
 	printf("rendezvous\n");
 
-	//	mutex.wait()
-	//	   count = count + 1
-	//	mutex.signal()
+	// https://linux.die.net/man/3/pthread_barrier_wait
+	s = pthread_barrier_wait(&thread_barrier);
+
+	/*
+	 The pthread_barrier_wait() function shall synchronize participating threads at
+	 the barrier referenced by barrier. The calling thread shall block until
+	 the required number of threads have called pthread_barrier_wait() specifying the barrier.
+	*/
+
+	printf("critical point\n");
+
 	if (sem_wait(&mutex) == -1) {
 		perror("sem_wait");
 		exit(EXIT_FAILURE);
@@ -62,36 +57,12 @@ void * thread_function(void * arg) {
 		perror("sem_post");
 		exit(EXIT_FAILURE);
 	}
-	//
-
-	//	if count == n :
-	//	   barrier.signal()
-	if (count == number_of_threads) {
-		if (sem_post(&barrier) == -1) {
-			perror("sem_post");
-			exit(EXIT_FAILURE);
-		}
-	}
-
-	// turnstile (tornello)
-	//	barrier.wait()
-	//	barrier.signal()
-	if (sem_wait(&barrier) == -1) {
-		perror("sem_wait");
-		exit(EXIT_FAILURE);
-	}
-	if (sem_post(&barrier) == -1) {
-		perror("sem_post");
-		exit(EXIT_FAILURE);
-	}
-	//
-
-	printf("critical point\n");
 
 	return NULL;
 }
 
 #define CHECK_ERR(a,msg) {if ((a) == -1) { perror((msg)); exit(EXIT_FAILURE); } }
+#define CHECK_ERR2(a,msg) {if ((a) != 0) { perror((msg)); exit(EXIT_FAILURE); } }
 
 int main() {
 
@@ -106,38 +77,29 @@ int main() {
 
 	CHECK_ERR(s,"sem_init")
 
-	s = sem_init(&barrier,
-						0, // 1 => il semaforo è condiviso tra processi,
-						   // 0 => il semaforo è condiviso tra threads del processo
-						0 // valore iniziale del semaforo
-					  );
 
-	CHECK_ERR(s,"sem_init")
+	// https://linux.die.net/man/3/pthread_barrier_init
+	s = pthread_barrier_init(&thread_barrier, NULL, N);
+	CHECK_ERR(s,"pthread_barrier_init")
 
 	for (int i=0; i < number_of_threads; i++) {
-		s = pthread_create(&threads[i], NULL, thread_function, NULL);
-
-		if (s != 0) {
-			perror("pthread_create");
-			exit(EXIT_FAILURE);
-		}
+		s = pthread_create(&threads[i], NULL, rendezvous, NULL);
+		CHECK_ERR2(s,"pthread_create")
 	}
 
 	for (int i=0; i < number_of_threads; i++) {
 		s = pthread_join(threads[i], NULL);
-
-		if (s != 0) {
-			perror("pthread_join");
-			exit(EXIT_FAILURE);
-		}
-
+		CHECK_ERR2(s,"pthread_join")
 	}
+
+	// https://linux.die.net/man/3/pthread_barrier_init
+	s = pthread_barrier_destroy(&thread_barrier);
+	CHECK_ERR(s,"pthread_barrier_destroy")
 
 	s = sem_destroy(&mutex);
 	CHECK_ERR(s,"sem_destroy")
 
-	s = sem_destroy(&barrier);
-	CHECK_ERR(s,"sem_destroy")
+	printf("count expected %d, count obtained %d\n", N, count);
 
 	printf("bye\n");
 
